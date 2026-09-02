@@ -68,7 +68,12 @@ export async function enforce(
     .where(eq(meters.projectId, projectId));
 
   const results: EnforcementResult[] = [];
-  const incremented: { scope: ReturnType<typeof scopeColumns>; meterId: string; windowStart: Date }[] = [];
+  const incremented: {
+    scope: ReturnType<typeof scopeColumns>;
+    meterId: string;
+    windowStart: Date;
+    resultIndex: number;
+  }[] = [];
   let allowed = true;
 
   for (const meter of projectMeters) {
@@ -89,7 +94,12 @@ export async function enforce(
     `);
 
     if (inserted.rows[0]) {
-      incremented.push({ scope, meterId: meter.id, windowStart });
+      incremented.push({
+        scope,
+        meterId: meter.id,
+        windowStart,
+        resultIndex: results.length,
+      });
       results.push({
         meterName: meter.name,
         limit: meter.limit,
@@ -114,9 +124,10 @@ export async function enforce(
     }
   }
 
-  // A rejected request consumes no quota — roll back any increments.
+  // A rejected request consumes no quota — roll back any increments and
+  // report the post-rollback usage, not the transient incremented value.
   if (!allowed) {
-    for (const { scope, meterId, windowStart } of incremented) {
+    for (const { scope, meterId, windowStart, resultIndex } of incremented) {
       await db
         .update(usage)
         .set({ count: sql`${usage.count} - 1` })
@@ -125,6 +136,8 @@ export async function enforce(
               AND ${usage.windowStart} = ${windowStart.toISOString()}
               AND coalesce(${usage.apiKeyId}, ${usage.projectId}) = coalesce(${scope.apiKeyId}::uuid, ${scope.projectId}::uuid)`,
         );
+      const reported = results[resultIndex];
+      if (reported) reported.used = Math.max(0, reported.used - 1);
     }
   }
 
