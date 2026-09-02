@@ -26,16 +26,18 @@ async function main() {
   await db.insert(schema.meters).values([
     {
       projectId: project.id,
-      name: "Rate limit (60/min)",
+      name: "Rate limit (60/min per key)",
       kind: "rate",
+      scope: "key",
       limit: 60,
       periodSeconds: 60,
     },
     {
       projectId: project.id,
-      name: "Daily quota (5/day)",
+      name: "Daily quota (20/day per project)",
       kind: "quota",
-      limit: 5,
+      scope: "project",
+      limit: 20,
       period: "day",
     },
   ]);

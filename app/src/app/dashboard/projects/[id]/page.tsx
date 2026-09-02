@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, gte, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
 import { apiKeys, meters, projects, requests, usage } from '@/db/schema';
@@ -41,6 +41,81 @@ function Bar({ used, limit }: { used: number; limit: number }) {
 	);
 }
 
+function SegmentedBar({
+	total,
+	limit,
+	segments,
+}: {
+	total: number;
+	limit: number;
+	segments: { label: string; name: string; used: number }[];
+}) {
+	const opacities = [1, 0.7, 0.5, 0.35, 0.25];
+	return (
+		<>
+			{/* The visible bar is 6px tall, but each segment is a taller hover
+			    zone (py-3) — easy to target without changing the layout. No
+			    overflow-hidden anywhere: it would clip the tooltips. */}
+			<div
+				className="relative -my-3 py-3"
+				role="progressbar"
+				aria-valuenow={total}
+				aria-valuemin={0}
+				aria-valuemax={limit}
+			>
+				<div
+					aria-hidden="true"
+					className="h-1.5 w-full rounded-full bg-border"
+				/>
+				<div
+					aria-hidden="true"
+					className="absolute inset-0 flex items-center"
+				>
+					{segments.map((seg, i) => (
+						<div
+							key={seg.label}
+							className="group relative flex h-7 items-center"
+							style={{ width: `${(seg.used / limit) * 100}%` }}
+						>
+							<div
+								className={`h-1.5 w-full bg-accent ${i === 0 ? 'rounded-l-full' : ''} ${
+									i === segments.length - 1 ? 'rounded-r-full' : ''
+								}`}
+								style={{ opacity: opacities[i % opacities.length] }}
+							/>
+							<div
+								role="tooltip"
+								className="pointer-events-none absolute left-1/2 top-full z-50 hidden -translate-x-1/2 whitespace-nowrap rounded-md border border-border bg-surface px-2.5 py-1.5 text-xs shadow-lg group-hover:block"
+							>
+								<span className="font-sans font-medium text-foreground">
+									{seg.name}
+								</span>
+								<span className="ml-2 text-muted">
+									{seg.label} · {seg.used}
+								</span>
+							</div>
+						</div>
+					))}
+				</div>
+			</div>
+			<ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+				{segments.map((seg, i) => (
+					<li
+						key={seg.label}
+						className="flex items-center gap-1.5 font-mono text-xs text-muted"
+					>
+						<span
+							className="inline-block size-2 rounded-full bg-accent"
+							style={{ opacity: opacities[i % opacities.length] }}
+						/>
+						{seg.label} · {seg.used}
+					</li>
+				))}
+			</ul>
+		</>
+	);
+}
+
 export default async function ProjectPage(
 	props: PageProps<'/dashboard/projects/[id]'>,
 ) {
@@ -76,15 +151,16 @@ export default async function ProjectPage(
 		db.select({ total: count() }).from(requests).where(eq(requests.projectId, id)),
 	]);
 
-	// Current window usage per (meter, key). Limits apply per key — that is
-	// exactly what the gateway enforces — so usage is shown per key.
+	// Current window usage per (meter, scope). Key-scope meters show one bar
+	// per active key; project-scope meters show a single shared bar.
 	const keyIds = activeKeys.map((k) => k.id);
 	const usageRows =
-		keyIds.length > 0
+		projectMeters.length > 0
 			? await db
 					.select({
 						meterId: usage.meterId,
 						apiKeyId: usage.apiKeyId,
+						projectId: usage.projectId,
 						count: usage.count,
 					})
 					.from(usage)
@@ -94,7 +170,6 @@ export default async function ProjectPage(
 								usage.meterId,
 								projectMeters.map((m) => m.id),
 							),
-							inArray(usage.apiKeyId, keyIds),
 							inArray(
 								usage.windowStart,
 								projectMeters.map((m) => currentWindowStart(m)),
@@ -104,8 +179,35 @@ export default async function ProjectPage(
 			: [];
 
 	const usageMap = new Map(
-		usageRows.map((r) => [`${r.meterId}:${r.apiKeyId}`, Number(r.count)]),
+		usageRows.map(
+			(r) => [`${r.meterId}:${r.apiKeyId ?? r.projectId}`, Number(r.count)] as const,
+		),
 	);
+
+	// Project-scope meters aggregate usage into a single counter, so the
+	// per-key split comes from the request log instead: consumed requests
+	// (status 200) of each meter's current window, grouped by key.
+	const projectScopeMeters = projectMeters.filter((m) => m.scope === 'project');
+	const segmentsByMeter = new Map<string, { keyId: string; used: number }[]>();
+	for (const meter of projectScopeMeters) {
+		if (keyIds.length === 0) break;
+		const rows = await db
+			.select({ apiKeyId: requests.apiKeyId, used: count() })
+			.from(requests)
+			.where(
+				and(
+					eq(requests.projectId, id),
+					eq(requests.status, 200),
+					gte(requests.createdAt, currentWindowStart(meter)),
+					inArray(requests.apiKeyId, keyIds),
+				),
+			)
+			.groupBy(requests.apiKeyId);
+		segmentsByMeter.set(
+			meter.id,
+			rows.map((r) => ({ keyId: r.apiKeyId!, used: Number(r.used) })),
+		);
+	}
 
 	return (
 		<div>
@@ -124,7 +226,8 @@ export default async function ProjectPage(
 				Limits &amp; current usage
 			</h2>
 			<p className="mt-1 text-sm text-muted">
-				Limits are enforced per API key — each bar is one active key.
+				Each bar is one active key (key-scope limits) or the whole project
+				(project-scope limits) — exactly as the gateway enforces them.
 			</p>
 
 			{projectMeters.length === 0 ? (
@@ -143,26 +246,54 @@ export default async function ProjectPage(
 								<h3 className="font-medium">{meter.name}</h3>
 								<span className="font-mono text-xs text-muted">
 									{meter.kind === 'rate' ? 'rate' : 'quota'} ·{' '}
+									{meter.scope === 'project' ? 'project' : 'key'} ·{' '}
 									{windowLabel(meter)}
 								</span>
 							</div>
 							<ul className="mt-3 space-y-4">
-								{activeKeys.map((key) => {
-									const used = usageMap.get(`${meter.id}:${key.id}`) ?? 0;
+								{(meter.scope === 'project'
+									? [{ id: project.id, label: 'whole project' }]
+									: activeKeys.map((k) => ({
+											id: k.id,
+											label: k.prefix,
+										}))
+								).map((bar) => {
+									const used =
+										usageMap.get(`${meter.id}:${bar.id}`) ?? 0;
+									const segments = segmentsByMeter
+										.get(meter.id)
+										?.map((seg) => {
+											const key = activeKeys.find(
+												(k) => k.id === seg.keyId,
+											);
+											return {
+												label: key?.prefix ?? 'unknown',
+												name: key?.name ?? 'unknown key',
+												used: seg.used,
+											};
+										});
 									return (
-										<li key={key.id}>
+										<li key={bar.id}>
 											<div className="flex items-baseline justify-between gap-4 text-sm">
 												<span className="font-mono text-xs text-muted">
-													{key.prefix}
+													{bar.label}
 												</span>
 												<span className="tabular-nums">
 													{used}
 													<span className="text-muted"> / {meter.limit}</span>
 												</span>
 											</div>
-											<div className="mt-1.5">
-												<Bar used={used} limit={meter.limit} />
-											</div>
+											{meter.scope === 'project' && segments && segments.length > 0 ? (
+												<SegmentedBar
+													total={used}
+													limit={meter.limit}
+													segments={segments}
+												/>
+											) : (
+												<div className="mt-1.5">
+													<Bar used={used} limit={meter.limit} />
+												</div>
+											)}
 										</li>
 									);
 								})}
