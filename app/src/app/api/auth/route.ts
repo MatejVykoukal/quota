@@ -8,6 +8,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  // The app is only ever reached through a trusted reverse proxy (Caddy in
+  // docker-compose, the platform edge on Railway), which overwrites
+  // X-Forwarded-For with the real client IP. Never trust this header when
+  // running the app directly without a proxy in front.
   const ip =
     req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
 
