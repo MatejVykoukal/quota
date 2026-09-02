@@ -3,6 +3,7 @@ import { count, gte, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { apiKeys, projects, requests } from "@/db/schema";
 import { startOfUtcDay } from "@/lib/dates";
+import { NewProjectButton } from "./NewProjectButton";
 
 export const dynamic = "force-dynamic";
 
@@ -33,10 +34,15 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
-      <p className="mt-1 text-sm text-muted">
-        Usage across your API projects — today (UTC).
-      </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Projects</h1>
+          <p className="mt-1 text-sm text-muted">
+            Usage across your API projects — today (UTC).
+          </p>
+        </div>
+        <NewProjectButton />
+      </div>
 
       {allProjects.length === 0 ? (
         <div className="mt-10 rounded-lg border border-dashed border-border p-10 text-center">

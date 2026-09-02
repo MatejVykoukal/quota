@@ -7,6 +7,7 @@ import { apiKeys, meters, projects, requests, usage } from '@/db/schema';
 import { currentWindowStart } from '@/lib/enforce';
 import { KeysPanel, type KeyRow } from './KeysPanel';
 import { RequestsList, type RequestRow } from './RequestsList';
+import { AddMeterButton } from './AddMeterButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -222,9 +223,12 @@ export default async function ProjectPage(
 			</h1>
 			<p className="mt-1 text-sm text-muted">{project.description ?? '—'}</p>
 
-			<h2 className="mt-10 text-base font-semibold tracking-tight">
-				Limits &amp; current usage
-			</h2>
+			<div className="mt-10 flex items-start justify-between gap-4">
+				<h2 className="text-base font-semibold tracking-tight">
+					Limits &amp; current usage
+				</h2>
+				<AddMeterButton projectId={id} />
+			</div>
 			<p className="mt-1 text-sm text-muted">
 				Each bar is one active key (key-scope limits) or the whole project
 				(project-scope limits) — exactly as the gateway enforces them.
