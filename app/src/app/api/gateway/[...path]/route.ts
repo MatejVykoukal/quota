@@ -22,7 +22,9 @@ export async function POST(req: NextRequest) {
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
 
   const fail = async (status: number, body: object) => {
-    // Log the request for the dashboard (best effort)
+    // Log the request for the dashboard (best effort). Note: failed-auth
+    // requests (401) carry no projectId — the key is unknown or revoked, so
+    // they cannot be attributed to a project and show only in the request log.
     await db
       .insert(requests)
       .values({
