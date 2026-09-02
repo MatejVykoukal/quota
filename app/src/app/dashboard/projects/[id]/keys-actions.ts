@@ -63,3 +63,29 @@ export async function revokeKey(projectId: string, keyId: string) {
 
 	revalidatePath(`/dashboard/projects/${projectId}`);
 }
+
+/** Temporarily pause/resume a key without revoking it. */
+export async function setKeyEnabled(
+	projectId: string,
+	keyId: string,
+	enabled: boolean,
+) {
+	if (
+		![projectId, keyId].every((id) => z.string().uuid().safeParse(id).success)
+	) {
+		return;
+	}
+
+	await db
+		.update(apiKeys)
+		.set({ enabled })
+		.where(
+			and(
+				eq(apiKeys.id, keyId),
+				eq(apiKeys.projectId, projectId),
+				isNull(apiKeys.revokedAt),
+			),
+		);
+
+	revalidatePath(`/dashboard/projects/${projectId}`);
+}

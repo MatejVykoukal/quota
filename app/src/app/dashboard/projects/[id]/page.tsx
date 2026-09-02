@@ -311,6 +311,7 @@ export default async function ProjectPage(
 						name: k.name,
 						prefix: k.keyPrefix,
 						revoked: k.revokedAt !== null,
+						enabled: k.enabled,
 						createdAt: k.createdAt.toISOString().slice(0, 10),
 					}),
 				)}

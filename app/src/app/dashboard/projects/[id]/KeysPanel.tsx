@@ -4,6 +4,7 @@ import { useActionState, useState } from 'react';
 import {
 	createKey,
 	revokeKey,
+	setKeyEnabled,
 	type CreateKeyResult,
 } from './keys-actions';
 
@@ -12,6 +13,7 @@ export interface KeyRow {
 	name: string;
 	prefix: string;
 	revoked: boolean;
+	enabled: boolean;
 	createdAt: string;
 }
 
@@ -114,22 +116,36 @@ export function KeysPanel({
 								{k.prefix} · created {k.createdAt}
 							</p>
 						</div>
-						{k.revoked ? (
+					{k.revoked ? (
 							<span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted">
 								revoked
 							</span>
 						) : (
-							<button
-								type="button"
-								onClick={() => {
-									if (confirm(`Revoke key "${k.name}"?`)) {
-										revokeKey(projectId, k.id);
-									}
-								}}
-								className="focus-ring rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
-							>
-								Revoke
-							</button>
+							<div className="flex items-center gap-2">
+								{!k.enabled && (
+									<span className="rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+										disabled
+									</span>
+								)}
+								<button
+									type="button"
+									onClick={() => setKeyEnabled(projectId, k.id, !k.enabled)}
+									className="focus-ring rounded-md px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-border/50 hover:text-foreground"
+								>
+									{k.enabled ? 'Disable' : 'Enable'}
+								</button>
+								<button
+									type="button"
+									onClick={() => {
+										if (confirm(`Revoke key "${k.name}"?`)) {
+											revokeKey(projectId, k.id);
+										}
+									}}
+									className="focus-ring rounded-md px-2 py-1 text-xs font-medium text-red-600 transition-colors hover:bg-red-600/10 dark:text-red-400"
+								>
+									Revoke
+								</button>
+							</div>
 						)}
 					</li>
 				))}
