@@ -8,6 +8,8 @@ import { currentWindowStart } from '@/lib/enforce';
 import { KeysPanel, type KeyRow } from './KeysPanel';
 import { RequestsList, type RequestRow } from './RequestsList';
 import { AddMeterButton } from './AddMeterButton';
+import { DeleteMeterButton } from './DeleteMeterButton';
+import { DeleteProjectButton } from './DeleteProjectButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -248,10 +250,17 @@ export default async function ProjectPage(
 						<section key={meter.id}>
 							<div className="flex items-baseline justify-between gap-4">
 								<h3 className="font-medium">{meter.name}</h3>
-								<span className="font-mono text-xs text-muted">
-									{meter.kind === 'rate' ? 'rate' : 'quota'} ·{' '}
-									{meter.scope === 'project' ? 'project' : 'key'} ·{' '}
-									{windowLabel(meter)}
+								<span className="flex items-center gap-1">
+									<span className="font-mono text-xs text-muted">
+										{meter.kind === 'rate' ? 'rate' : 'quota'} ·{' '}
+										{meter.scope === 'project' ? 'project' : 'key'} ·{' '}
+										{windowLabel(meter)}
+									</span>
+									<DeleteMeterButton
+										projectId={id}
+										meterId={meter.id}
+										meterName={meter.name}
+									/>
 								</span>
 							</div>
 							<ul className="mt-3 space-y-4">
@@ -306,6 +315,17 @@ export default async function ProjectPage(
 					))}
 				</div>
 			)}
+
+			<div className="mt-12 flex items-center justify-between rounded-lg border border-border p-4">
+				<div>
+					<p className="text-sm font-medium">Danger zone</p>
+					<p className="mt-0.5 text-xs text-muted">
+						Deleting the project removes its keys, meters and history for
+						good.
+					</p>
+				</div>
+				<DeleteProjectButton projectId={id} projectName={project.name} />
+			</div>
 
 			<KeysPanel
 				projectId={id}

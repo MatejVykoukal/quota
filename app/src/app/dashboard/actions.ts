@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { z } from 'zod';
 import { db } from '@/db';
+import { and, eq } from 'drizzle-orm';
 import { meters, projects } from '@/db/schema';
 
 const createProjectSchema = z.object({
@@ -93,4 +94,48 @@ export async function addMeter(
 
 	revalidatePath(`/dashboard/projects/${projectId}`);
 	return { ok: true };
+}
+
+/**
+ * Permanently delete a project and everything in it (keys, meters, usage,
+ * request log cascade). Requires the exact project name as confirmation.
+ */
+export async function deleteProject(
+	projectId: string,
+	confirmation: string,
+): Promise<{ ok: false; error: string } | { ok: true }> {
+	if (!z.string().uuid().safeParse(projectId).success) {
+		return { ok: false, error: 'Invalid project' };
+	}
+
+	const [project] = await db
+		.select({ name: projects.name })
+		.from(projects)
+		.where(eq(projects.id, projectId));
+	if (!project) return { ok: false, error: 'Project not found' };
+
+	if (confirmation.trim() !== project.name) {
+		return { ok: false, error: 'The name does not match' };
+	}
+
+	await db.delete(projects).where(eq(projects.id, projectId));
+	revalidatePath('/dashboard');
+	redirect('/dashboard');
+}
+
+/** Delete a meter and its usage counters (request log is kept). */
+export async function deleteMeter(projectId: string, meterId: string) {
+	if (
+		![projectId, meterId].every((id) =>
+			z.string().uuid().safeParse(id).success,
+		)
+	) {
+		return;
+	}
+
+	await db
+		.delete(meters)
+		.where(and(eq(meters.id, meterId), eq(meters.projectId, projectId)));
+
+	revalidatePath(`/dashboard/projects/${projectId}`);
 }
