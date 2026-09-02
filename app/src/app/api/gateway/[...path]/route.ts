@@ -21,13 +21,20 @@ export async function POST(req: NextRequest) {
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
 
-  const fail = async (status: number, body: object) => {
-    // Log the request for the dashboard (best effort). Note: failed-auth
-    // requests (401) carry no projectId — the key is unknown or revoked, so
-    // they cannot be attributed to a project and show only in the request log.
+  const fail = async (
+    status: number,
+    body: object,
+    key?: typeof apiKeys.$inferSelect,
+  ) => {
+    // Log the request for the dashboard (best effort). Attribution: 429s
+    // carry the (valid but over-limit) key's ids; 401s carry none — the key
+    // is unknown or revoked, so they cannot be attributed to a project and
+    // show only in the request log.
     await db
       .insert(requests)
       .values({
+        apiKeyId: key?.id ?? null,
+        projectId: key?.projectId ?? null,
         path: req.nextUrl.pathname,
         method: req.method,
         status,
@@ -48,17 +55,24 @@ export async function POST(req: NextRequest) {
 
   const apiKey = keyRows[0];
   if (!apiKey || !apiKey.enabled) {
-    return fail(401, { error: "unauthorized", message: "Invalid or revoked API key" });
+    return fail(401, {
+      error: "unauthorized",
+      message: "Invalid or revoked API key",
+    });
   }
 
   const { allowed, results } = await enforce(apiKey.id);
 
   if (!allowed) {
-    return fail(429, {
-      error: "rate_limit_exceeded",
-      message: "One or more usage limits exceeded",
-      results,
-    });
+    return fail(
+      429,
+      {
+        error: "rate_limit_exceeded",
+        message: "One or more usage limits exceeded",
+        results,
+      },
+      apiKey,
+    );
   }
 
   await db.insert(requests).values({

@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { apiKeys, meters, projects, usage } from '@/db/schema';
 import { currentWindowStart } from '@/lib/enforce';
+import { KeysPanel, type KeyRow } from './KeysPanel';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,7 +49,7 @@ export default async function ProjectPage(
 	const [project] = await db.select().from(projects).where(eq(projects.id, id));
 	if (!project) notFound();
 
-	const [projectMeters, activeKeys] = await Promise.all([
+	const [projectMeters, activeKeys, allKeys] = await Promise.all([
 		db.select().from(meters).where(eq(meters.projectId, id)),
 		db
 			.select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.keyPrefix })
@@ -60,6 +61,11 @@ export default async function ProjectPage(
 					eq(apiKeys.enabled, true),
 				),
 			),
+		db
+			.select()
+			.from(apiKeys)
+			.where(eq(apiKeys.projectId, id))
+			.orderBy(apiKeys.createdAt),
 	]);
 
 	// Current window usage per (meter, key). Limits apply per key — that is
@@ -157,6 +163,19 @@ export default async function ProjectPage(
 					))}
 				</div>
 			)}
+
+			<KeysPanel
+				projectId={id}
+				keys={allKeys.map(
+					(k): KeyRow => ({
+						id: k.id,
+						name: k.name,
+						prefix: k.keyPrefix,
+						revoked: k.revokedAt !== null,
+						createdAt: k.createdAt.toISOString().slice(0, 10),
+					}),
+				)}
+			/>
 		</div>
 	);
 }
