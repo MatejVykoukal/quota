@@ -1,11 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { db } from '@/db';
-import { apiKeys, meters, projects, usage } from '@/db/schema';
+import { apiKeys, meters, projects, requests, usage } from '@/db/schema';
 import { currentWindowStart } from '@/lib/enforce';
 import { KeysPanel, type KeyRow } from './KeysPanel';
+import { RequestsList, type RequestRow } from './RequestsList';
 
 export const dynamic = 'force-dynamic';
 
@@ -49,7 +50,7 @@ export default async function ProjectPage(
 	const [project] = await db.select().from(projects).where(eq(projects.id, id));
 	if (!project) notFound();
 
-	const [projectMeters, activeKeys, allKeys] = await Promise.all([
+	const [projectMeters, activeKeys, allKeys, recentRequestsRaw, totalRow] = await Promise.all([
 		db.select().from(meters).where(eq(meters.projectId, id)),
 		db
 			.select({ id: apiKeys.id, name: apiKeys.name, prefix: apiKeys.keyPrefix })
@@ -66,6 +67,13 @@ export default async function ProjectPage(
 			.from(apiKeys)
 			.where(eq(apiKeys.projectId, id))
 			.orderBy(apiKeys.createdAt),
+		db
+			.select()
+			.from(requests)
+			.where(eq(requests.projectId, id))
+			.orderBy(desc(requests.createdAt))
+			.limit(50),
+		db.select({ total: count() }).from(requests).where(eq(requests.projectId, id)),
 	]);
 
 	// Current window usage per (meter, key). Limits apply per key — that is
@@ -173,6 +181,21 @@ export default async function ProjectPage(
 						prefix: k.keyPrefix,
 						revoked: k.revokedAt !== null,
 						createdAt: k.createdAt.toISOString().slice(0, 10),
+					}),
+				)}
+			/>
+
+			<RequestsList
+				projectId={id}
+				total={Number(totalRow[0]?.total ?? 0)}
+				initialRequests={recentRequestsRaw.map(
+					(r): RequestRow => ({
+						id: r.id,
+						createdAt: r.createdAt.toISOString(),
+						method: r.method,
+						status: r.status,
+						path: r.path,
+						latencyMs: r.latencyMs,
 					}),
 				)}
 			/>
