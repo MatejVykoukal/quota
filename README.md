@@ -18,6 +18,16 @@ Quota is an MVP demo showcasing full-stack engineering: a control plane where AP
 
 _TBD — see the sections below as we build._
 
+## Architecture
+
+```
+client → Caddy proxy (:8080) → Next.js app (API + dashboard) → Postgres
+```
+
+- **Caddy** — trusted reverse proxy, sole entry point; owns `X-Forwarded-For`
+- **app** — Next.js (control plane UI + gateway enforcement API), never exposed directly
+- **db** — Postgres 17, internal network only
+
 ## Getting Started
 
 ### 1. Start Postgres
@@ -45,6 +55,19 @@ DATABASE_URL="postgres://<user>:<password>@localhost:5433/<db>"
 AUTH_SECRET="random-long-string"
 ```
 
+### Running the full stack in Docker
+
+```bash
+cp .env.example .env   # set POSTGRES_PASSWORD and AUTH_SECRET
+docker compose up --build
+```
+
+Migrations run automatically on app start. The app is served at `http://localhost:8080` through the proxy.
+
+> Note: `POSTGRES_PASSWORD` is applied only when the data volume is created
+> for the first time. To change it later, run `docker compose down -v` and
+> start again (wipes local data).
+
 ### 3. Try the gateway
 
 The seed script prints an API key once. Use it against the enforcement endpoint:
@@ -64,3 +87,10 @@ Over a limit → `429 rate_limit_exceeded`. No key → `401 unauthorized`.
 - [ ] Usage metering & enforcement
 - [ ] Dashboard UI
 - [ ] Demo seed data
+
+## Deployment
+
+The repo deploys as a single container (see `app/Dockerfile`) — migrations run on start.
+On [Railway](https://railway.app): create a project from this repo, add a Postgres instance,
+and set `DATABASE_URL`, `AUTH_SECRET` for the app service. The Dockerfile is detected
+automatically.
