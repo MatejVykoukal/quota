@@ -1,4 +1,10 @@
-import { createHash, randomBytes, createHmac } from "crypto";
+import {
+  createHash,
+  randomBytes,
+  createHmac,
+  scryptSync,
+  timingSafeEqual,
+} from "crypto";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 
@@ -27,8 +33,43 @@ export function hashApiKey(key: string): string {
 const SESSION_COOKIE = "quota_session";
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+/**
+ * Demo credentials — single-user MVP. The password exists only as a source
+ * for the startup hash; verification always goes through the same hashed
+ * comparison path as production would.
+ */
 export const DEMO_EMAIL = "demo@quota.dev";
-export const DEMO_PASSWORD = "demo1234";
+const DEMO_PASSWORD = "demo1234";
+
+/**
+ * Hash a password with scrypt (random salt). Format: salt:hash.
+ * The plaintext password never leaves the caller and is never stored.
+ */
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString("hex");
+  return `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
+}
+
+/**
+ * Verify a password against a scrypt hash in constant time.
+ * Use instead of raw string comparison — see timing attacks.
+ */
+export function verifyPassword(
+  password: string,
+  stored: string,
+): boolean {
+  const [salt, hash] = stored.split(":");
+  if (!salt || !hash) return false;
+  const derived = scryptSync(password, salt, 64);
+  const expected = Buffer.from(hash, "hex");
+  return derived.length === expected.length && timingSafeEqual(derived, expected);
+}
+
+const DEMO_PASSWORD_HASH = hashPassword(DEMO_PASSWORD);
+
+export function verifyDemoPassword(password: string): boolean {
+  return verifyPassword(password, DEMO_PASSWORD_HASH);
+}
 
 function sign(value: string): string {
   return createHmac("sha256", env.authSecret)

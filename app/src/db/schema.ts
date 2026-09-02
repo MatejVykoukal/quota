@@ -136,3 +136,18 @@ export type ApiKey = typeof apiKeys.$inferSelect;
 export type Meter = typeof meters.$inferSelect;
 export type Usage = typeof usage.$inferSelect;
 export type RequestLog = typeof requests.$inferSelect;
+
+/**
+ * Failed login attempts per client IP, counted in fixed 15-minute windows.
+ * Same atomic upsert pattern as `usage` — see lib/rate-limit.ts.
+ */
+export const authAttempts = pgTable(
+  "auth_attempts",
+  {
+    ip: text("ip").primaryKey(),
+    windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+    count: bigint("count", { mode: "number" }).default(0).notNull(),
+  },
+);
+
+export type AuthAttempt = typeof authAttempts.$inferSelect;
