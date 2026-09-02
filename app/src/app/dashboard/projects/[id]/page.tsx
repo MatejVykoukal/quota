@@ -54,6 +54,11 @@ function SegmentedBar({
 	segments: { label: string; name: string; used: number }[];
 }) {
 	const opacities = [1, 0.7, 0.5, 0.35, 0.25];
+	// The request-log split is only an attribution estimate — scale it so
+	// segments always sum to `total` (the authoritative usage counter) and
+	// never overshoot the bar.
+	const segmentSum = segments.reduce((acc, s) => acc + s.used, 0) || 1;
+	const scale = total / segmentSum;
 	return (
 		<>
 			{/* The visible bar is 6px tall, but each segment is a taller hover
@@ -78,7 +83,7 @@ function SegmentedBar({
 						<div
 							key={seg.label}
 							className="group relative flex h-7 items-center"
-							style={{ width: `${(seg.used / limit) * 100}%` }}
+							style={{ width: `${(seg.used * scale * 100) / limit}%` }}
 						>
 							<div
 								className={`h-1.5 w-full bg-accent ${i === 0 ? 'rounded-l-full' : ''} ${
@@ -296,7 +301,10 @@ export default async function ProjectPage(
 													<span className="text-muted"> / {meter.limit}</span>
 												</span>
 											</div>
-											{meter.scope === 'project' && segments && segments.length > 0 ? (
+											{meter.scope === 'project' &&
+									used > 0 &&
+									segments &&
+									segments.length > 0 ? (
 												<SegmentedBar
 													total={used}
 													limit={meter.limit}
