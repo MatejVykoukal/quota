@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { eq, and, isNull } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { apiKeys, requests } from '@/db/schema';
 import { hashApiKey } from '@/lib/auth';
@@ -27,9 +27,8 @@ export async function POST(req: NextRequest) {
 		key?: typeof apiKeys.$inferSelect,
 	) => {
 		// Log the request for the dashboard (best effort). Attribution: 429s
-		// carry the (valid but over-limit) key's ids; 401s carry none — the key
-		// is unknown or revoked, so they cannot be attributed to a project and
-		// show only in the request log.
+		// and 401s with a recognizable key carry its ids; only 401s with an
+		// unknown key stay unattributed.
 		await db
 			.insert(requests)
 			.values({
@@ -51,19 +50,33 @@ export async function POST(req: NextRequest) {
 		});
 	}
 
+	// Look the key up regardless of status, so revoked/disabled keys can be
+	// attributed (and told why they were rejected) while unknown ones cannot.
 	const keyRows = await db
 		.select()
 		.from(apiKeys)
-		.where(
-			and(eq(apiKeys.keyHash, hashApiKey(token)), isNull(apiKeys.revokedAt)),
-		);
+		.where(eq(apiKeys.keyHash, hashApiKey(token)));
 
 	const apiKey = keyRows[0];
-	if (!apiKey || !apiKey.enabled) {
+	if (!apiKey) {
 		return fail(401, {
 			error: 'unauthorized',
-			message: 'Invalid or revoked API key',
+			message: 'Invalid API key',
 		});
+	}
+	if (apiKey.revokedAt) {
+		return fail(
+			401,
+			{ error: 'unauthorized', message: 'API key has been revoked' },
+			apiKey,
+		);
+	}
+	if (!apiKey.enabled) {
+		return fail(
+			401,
+			{ error: 'unauthorized', message: 'API key is disabled' },
+			apiKey,
+		);
 	}
 
 	const { allowed, results } = await enforce(apiKey.id);
